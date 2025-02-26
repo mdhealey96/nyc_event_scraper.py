@@ -47,44 +47,55 @@ def extract_dates(text):
         return dates[0], dates[1] if len(dates) > 1 else None
     return None, None
 
-# Streamlit App UI
 st.title("NYC Event Scraper")
 
-# File uploaders
 uploaded_file1 = st.file_uploader("Upload 'Spreadsheet of Things to Do - Spring 2023.csv'", type=['csv'])
 uploaded_file2 = st.file_uploader("Upload 'Cape CI Ideas + Dump Doc 2024.csv'", type=['csv'])
 
 if uploaded_file1 and uploaded_file2:
-    # Load organization lists
     orgs_df1 = pd.read_csv(uploaded_file1)
     orgs_df2 = pd.read_csv(uploaded_file2)
     
-    # Merge both lists
+    # Debugging: Display file contents
+    st.write("### First Few Rows of Uploaded Files")
+    st.write("#### Spreadsheet of Things to Do - Spring 2023")
+    st.write(orgs_df1.head())
+    
+    st.write("#### Cape CI Ideas + Dump Doc 2024")
+    st.write(orgs_df2.head())
+    
+    st.write("### Categories Found in Files")
+    st.write(orgs_df1.columns)
+    st.write(orgs_df2.columns)
+    
     merged_orgs = pd.concat([orgs_df1, orgs_df2], ignore_index=True)
     relevant_categories = ["Theater", "Museums", "Book Readings", "Tours", "Panel Discussions", "Seasonal Outdoor Festivals"]
     merged_orgs['Flag for Review'] = merged_orgs['Category'].apply(lambda x: 'Yes' if x == "Misc" else 'No')
     merged_orgs = merged_orgs[merged_orgs['Category'].isin(relevant_categories + ["Misc"])]
-
+    
+    # Debugging: Test Google search URLs
+    test_orgs = ["The Metropolitan Museum of Art", "Brooklyn Academy of Music"]
+    for org in test_orgs:
+        website = f"https://www.google.com/search?q={org.replace(' ', '+')}+official+website"
+        st.write(f"🔍 Searching for: {org}")
+        st.write(f"🌐 Google Search URL: {website}")
+    
     output_data = []
     
     for _, row in merged_orgs.iterrows():
         org_name = row['Organization']
         if isinstance(org_name, str):
-            website = f"https://www.google.com/search?q={org_name.replace(' ', '+')}+official+website"
+            website = f"https://www.google.com/search?q={org.replace(' ', '+')}+official+website"
             event_data = fetch_event_data(org_name, website)
             for event in event_data:
                 event['Flag for Review'] = row['Flag for Review']
             output_data.extend(event_data)
-
-    # Save results as DataFrame
+    
     output_df = pd.DataFrame(output_data)
-
-    # Display results
+    
     if not output_df.empty:
         st.write("### Scraped Events")
         st.dataframe(output_df)
-
-        # Provide download link
         csv = output_df.to_csv(index=False).encode('utf-8')
         st.download_button("Download Events CSV", data=csv, file_name="NYC_Events_Spring_2025.csv", mime='text/csv')
     else:
