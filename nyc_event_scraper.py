@@ -4,27 +4,55 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import re
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+
+def get_first_google_result(query):
+    """Fetch the first website link from Google Search"""
+    google_url = f"https://www.google.com/search?q={query.replace(' ', '+')}+official+website"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    
+    response = requests.get(google_url, headers=headers)
+    if response.status_code != 200:
+        return None
+    
+    soup = BeautifulSoup(response.text, 'html.parser')
+    search_results = soup.find_all('a', href=True)
+
+    for result in search_results:
+        href = result['href']
+        if "http" in href and "google.com" not in href:
+            return href  # Return the first actual website link
+
+    return None  # Return None if no valid link is found
 
 def fetch_event_data(org_name, website):
-    """Scrape event details from a given organization's website."""
+    """Scrape event details from a given organization's website using Selenium"""
     try:
-        response = requests.get(website, headers={'User-Agent': 'Mozilla/5.0'})
-        if response.status_code != 200:
-            return []
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
+        options = Options()
+        options.add_argument("--headless")  # Run in headless mode (no visible browser)
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+
+        driver.get(website)
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        driver.quit()
+
         events = []
-        
+
         for event in soup.find_all(class_=re.compile("event|listing|schedule", re.IGNORECASE)):
             event_name = event.find('h2') or event.find('h3')
             date_text = event.find(string=re.compile(r'\b(March|April|May)\b', re.IGNORECASE))
             time_text = event.find(string=re.compile(r'\d{1,2}:\d{2}\s?(AM|PM)', re.IGNORECASE))
             category_text = event.find(string=re.compile(r'(theater|museum|book reading|tour|panel discussion|festival)', re.IGNORECASE))
-            
+
             if event_name and date_text and category_text:
                 start_date, end_date = extract_dates(date_text)
                 event_time = time_text.strip() if time_text else "TBD"
-                
+
                 if start_date and (datetime(2025, 3, 1) <= start_date <= datetime(2025, 5, 31)):
                     events.append({
                         "Event Name": event_name.get_text(strip=True),
@@ -73,23 +101,19 @@ if uploaded_file1 and uploaded_file2:
     merged_orgs['Flag for Review'] = merged_orgs['Category'].apply(lambda x: 'Yes' if x == "Misc" else 'No')
     merged_orgs = merged_orgs[merged_orgs['Category'].isin(relevant_categories + ["Misc"])]
     
-    # Debugging: Test Google search URLs
-    test_orgs = ["The Metropolitan Museum of Art", "Brooklyn Academy of Music"]
-    for org in test_orgs:
-        website = f"https://www.google.com/search?q={org.replace(' ', '+')}+official+website"
-        st.write(f"🔍 Searching for: {org}")
-        st.write(f"🌐 Google Search URL: {website}")
-    
     output_data = []
     
     for _, row in merged_orgs.iterrows():
         org_name = row['Organization']
         if isinstance(org_name, str):
-            website = f"https://www.google.com/search?q={org.replace(' ', '+')}+official+website"
-            event_data = fetch_event_data(org_name, website)
-            for event in event_data:
-                event['Flag for Review'] = row['Flag for Review']
-            output_data.extend(event_data)
+            website = get_first_google_result(org_name)
+            if website:
+                event_data = fetch_event_data(org_name, website)
+                for event in event_data:
+                    event['Flag for Review'] = row['Flag for Review']
+                output_data.extend(event_data)
+            else:
+                st.write(f"❌ No website found for {org_name}")
     
     output_df = pd.DataFrame(output_data)
     
